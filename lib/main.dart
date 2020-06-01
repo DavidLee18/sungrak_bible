@@ -32,14 +32,12 @@ class HomePage extends StatelessWidget {
     FutureBuilder(future: _service.books.elementAt(index), 
     builder: (context, AsyncSnapshot<MapEntry<String, Map<int, Map<int, String>>>> snapshot) {
       Widget widget;
-      if(snapshot.hasError) return Center(child: Column(children: [
-        Icon(Icons.error, color: Colors.red,),
-        Text('no index: error'),
-        RaisedButton(
-          child: Text('go back'),
-          onPressed: () => Navigator.pop(context)
-        ),
-      ],));
+      if(snapshot.hasError) return ListTile(
+        leading: Icon(Icons.error, color: Colors.red),
+        title: Text('Error'),
+        subtitle: Text(snapshot.error.toString()),
+        dense: true,
+      );
       else switch(snapshot.connectionState) {
         case ConnectionState.active:
         case ConnectionState.done:
@@ -63,8 +61,11 @@ class HomePage extends StatelessWidget {
 class BookPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    MapEntry<String, Map<int, Map<int, String>>> book = ModalRoute.of(context).settings.arguments;
-    if(book == null) return MyErrorWidget();
+    final MapEntry<String, Map<int, Map<int, String>>> book = ModalRoute.of(context).settings.arguments;
+    if(book == null) return MyErrorWidget(
+      message: 'No such book',
+      description: 'the book received as argument IS NULL',
+    );
     else {
       return Scaffold(
         appBar: AppBar(title: Text(book.key),),
@@ -81,11 +82,13 @@ class BookPage extends StatelessWidget {
 
 class MyErrorWidget extends StatelessWidget {
   final String message;
-  MyErrorWidget({this.message});
+  final String description;
+  MyErrorWidget({this.message = 'error', this.description = ''});
   @override
   Widget build(BuildContext context) => Center(child: Column(children: [
         Icon(Icons.error, color: Colors.red,),
-        Text(message ?? 'error'),
+        Text(message),
+        Text(description),
         RaisedButton(
           child: Text('go back'),
           onPressed: () => Navigator.pop(context)
@@ -96,10 +99,13 @@ class MyErrorWidget extends StatelessWidget {
 class ChapterPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    Tuple2<MapEntry<String, Map<int, Map<int, String>>>, int> bookChapter = ModalRoute.of(context).settings.arguments;
-    if (bookChapter?.item1 == null && bookChapter?.item2 == null) return MyErrorWidget();
+    final Tuple2<MapEntry<String, Map<int, Map<int, String>>>, int> bookChapter = ModalRoute.of(context).settings.arguments;
+    if (bookChapter?.item1 == null && bookChapter?.item2 == null) return MyErrorWidget(
+      message: 'No such book and chapter',
+      description: 'book and corresponding chapter received as argument IS BOTH NULL',
+    );
     else {
-      var chapter = bookChapter.item1.value[bookChapter.item2];
+      final chapter = bookChapter.item1.value[bookChapter.item2];
       return Scaffold(
         appBar: AppBar(title: Text('${bookChapter.item1.key} ${bookChapter.item2}장'),),
         body: ListView.builder(itemCount: bookChapter.item1.value.length, itemBuilder: (context, index) => 
