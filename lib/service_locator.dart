@@ -4,5 +4,5 @@ import 'sungrak_service.dart';
 GetIt locator = GetIt.instance;
 
 setupServiceLocator() {
-  locator.registerLazySingleton<SungrakServiceBase>(() => SungrakService());
+  locator.registerLazySingleton<SungrakService>(() => SungrakService());
 }
