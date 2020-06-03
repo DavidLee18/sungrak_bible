@@ -1,7 +1,37 @@
 import 'package:flutter/services.dart';
 
+class Verse {
+  final String bookAlias;
+  final int chapter;
+  final int verse;
+  final int range;
+  final String value;
+  Verse(this.bookAlias, this.chapter, this.verse, this.value, {this.range = 0});
+
+  static int chapters(MapEntry<String, List<Verse>> book) => book.value.last.chapter;
+  static int verses(MapEntry<String, List<Verse>> book, int chapter) {
+    final lastVerse = book.value.lastWhere((verse) => verse.chapter == chapter);
+    return lastVerse.verse + lastVerse.range;
+  }
+
+  Verse.fromJson(Map<String, dynamic> json):
+    bookAlias = json['bookAlias'], 
+    chapter = json['chapter'], 
+    verse = json['verse'], 
+    range = json['range'], 
+    value = json['value'];
+
+  Map<String, dynamic> toJson() => {
+    'bookAlias': bookAlias,
+    'chapter': chapter,
+    'verse': verse,
+    'range': range,
+    'value': value,
+  };
+}
+
 class SungrakService {
-  static const _books = [
+  final chapterNames = const [
     '1-01창세기', '1-02출애굽기', '1-03레위기', '1-04민수기', '1-05신명기', '1-06여호수아',
     '1-07사사기', '1-08룻기', '1-09사무엘상', '1-10사무엘하', '1-11열왕기상', '1-12열왕기하',
     '1-13역대상', '1-14역대하', '1-15에스라', '1-16느헤미야', '1-17에스더', '1-18욥기',
@@ -14,19 +44,24 @@ class SungrakService {
     '2-16디모데후서', '2-17디도서', '2-18빌레몬서', '2-19히브리서', '2-20야고보서', '2-21베드로전서',
     '2-22베드로후서', '2-23요한일서', '2-24요한이서', '2-25요한삼서', '2-26유다서', '2-27요한계시록',
   ];
-  final Iterable<Future<MapEntry<String, Map<int, Map<int, String>>>>> books = _books.map((b) async {
-      final res = await rootBundle.loadStructuredData('bible/$b.txt', parse);
-      return MapEntry(b.substring(4), res);
-    });
-
-  SungrakService();
-
-  static Future<Map<int, Map<int, String>>> parse(String raw) async {
-    Map<int, Map<int, String>> res;
-    raw.split('\n').forEach((e) {
-      final index = e.indexOf(':');
-      res[int.parse(e[index-1])][int.parse(e[index+1])] = e.substring(index + 3);
-    });
-    return res;
+  List<Future<MapEntry<String, List<Verse>>>> books;
+  SungrakService() {
+    books = chapterNames.map((String name) async {
+      final raw = await rootBundle.loadString('bible/$name.txt');
+      final res = raw.split('\r\n').map((verse) {
+        final first = verse.indexOf(RegExp(r'[1-9]'));
+        final colon = verse.indexOf(':');
+        final range = verse.indexOf('-');
+        final space = verse.indexOf(' ');
+        final brace = verse.indexOf('(');
+        if(range != -1 && (range < brace || brace == -1)) {
+          final startVerse = int.parse(verse.substring(colon + 1, range));
+          final finalVerse = int.parse(verse.substring(range + 1, space));
+          return Verse(verse.substring(0, first), int.parse(verse.substring(first, colon)), startVerse, verse.substring(space + 1), range: finalVerse - startVerse);
+        }
+        else return Verse(verse.substring(0, first), int.parse(verse.substring(first, colon)), int.parse(verse.substring(colon + 1, space)), verse.substring(space + 1));
+      }).toList();
+      return MapEntry(name.substring(4), res);
+    }).toList();
   }
 }
