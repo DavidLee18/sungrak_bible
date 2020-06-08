@@ -1,67 +1,110 @@
-import 'package:flutter/services.dart';
+import 'dart:async';
+import 'dart:io';
+import 'dart:math';
 
-class Verse {
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:sqflite/sqflite.dart';
+
+abstract class Bible {
+  static const columnIndex = 'idx', columnBibleKind = 'bible_kind', columnLang = 'bible_language',
+    columnBookIndex = 'kwon', columnBookName = 'fullname', columnBookAlias = 'nickname', columnChapter = 'jang', 
+    columnVerse = 'jul', columnValue = 'content';
+
+  Map toMap();
+}
+
+@immutable
+class DbBible extends Bible {
+  final int index;
+  final String kind;
+  final String language;
+  final int bookIndex;
+  final String bookName;
   final String bookAlias;
   final int chapter;
   final int verse;
-  final int range;
   final String value;
-  Verse(this.bookAlias, this.chapter, this.verse, this.value, {this.range = 0});
 
-  static int chapters(MapEntry<String, List<Verse>> book) => book.value.last.chapter;
-  static int verses(MapEntry<String, List<Verse>> book, int chapter) {
-    final lastVerse = book.value.lastWhere((verse) => verse.chapter == chapter);
-    return lastVerse.verse + lastVerse.range;
-  }
-
-  Verse.fromJson(Map<String, dynamic> json):
-    bookAlias = json['bookAlias'], 
-    chapter = json['chapter'], 
-    verse = json['verse'], 
-    range = json['range'], 
-    value = json['value'];
-
-  Map<String, dynamic> toJson() => {
-    'bookAlias': bookAlias,
-    'chapter': chapter,
-    'verse': verse,
-    'range': range,
-    'value': value,
+  @override
+  Map<String, dynamic> toMap() => {
+    Bible.columnIndex: index, 
+    Bible.columnBibleKind: kind, 
+    Bible.columnLang: language, 
+    Bible.columnBookIndex: bookIndex, 
+    Bible.columnBookName: bookName, 
+    Bible.columnBookAlias: bookAlias, 
+    Bible.columnChapter: chapter, 
+    Bible.columnVerse: verse, 
+    Bible.columnValue: value,
   };
+
+  DbBible.fromMap(Map<String, dynamic> map):
+    index = map[Bible.columnIndex], 
+    kind = map[Bible.columnBibleKind], 
+    language = map[Bible.columnLang], 
+    bookIndex = map[Bible.columnBookIndex], 
+    bookName = map[Bible.columnBookName], 
+    bookAlias = map[Bible.columnBookAlias], 
+    chapter = map[Bible.columnChapter], 
+    verse = map[Bible.columnVerse], 
+    value = map[Bible.columnValue];
+
+  static int chapters(Iterable<DbBible> book) => book.fold(1, (previousValue, b) => max(previousValue, b.chapter));
+  static int verses(Iterable<DbBible> book, int chapter) => book.where((v) => v.chapter == chapter).fold(1, (previousValue, b) => max(previousValue, b.verse));
 }
 
 class SungrakService {
-  final chapterNames = const [
-    '1-01창세기', '1-02출애굽기', '1-03레위기', '1-04민수기', '1-05신명기', '1-06여호수아',
-    '1-07사사기', '1-08룻기', '1-09사무엘상', '1-10사무엘하', '1-11열왕기상', '1-12열왕기하',
-    '1-13역대상', '1-14역대하', '1-15에스라', '1-16느헤미야', '1-17에스더', '1-18욥기',
-    '1-19시편', '1-20잠언', '1-21전도서', '1-22아가', '1-23이사야', '1-24예레미야',
-    '1-25예레미야애가', '1-26에스겔', '1-27다니엘', '1-28호세아', '1-29요엘', '1-30아모스',
-    '1-31오바댜', '1-32요나', '1-33미가', '1-34나훔', '1-35하박국', '1-36스바냐',
-    '1-37학개', '1-38스가랴', '1-39말라기', '2-01마태복음', '2-02마가복음', '2-03누가복음',
-    '2-04요한복음', '2-05사도행전', '2-06로마서', '2-07고린도전서', '2-08고린도후서', '2-09갈라디아서',
-    '2-10에베소서', '2-11빌립보서', '2-12골로새서', '2-13데살로니가전서', '2-14데살로니가후서', '2-15디모데전서',
-    '2-16디모데후서', '2-17디도서', '2-18빌레몬서', '2-19히브리서', '2-20야고보서', '2-21베드로전서',
-    '2-22베드로후서', '2-23요한일서', '2-24요한이서', '2-25요한삼서', '2-26유다서', '2-27요한계시록',
+  final bookNames = const [
+    '창세기', '출애굽기', '레위기', '민수기', '신명기', '여호수아',
+    '사사기', '룻기', '사무엘상', '사무엘하', '열왕기상', '열왕기하',
+    '역대상', '역대하', '에스라', '느헤미야', '에스더', '욥기',
+    '시편', '잠언', '전도서', '아가', '이사야', '예레미야',
+    '예레미야애가', '에스겔', '다니엘', '호세아', '요엘', '아모스',
+    '오바댜', '요나', '미가', '나훔', '하박국', '스바냐',
+    '학개', '스가랴', '말라기', '마태복음', '마가복음', '누가복음',
+    '요한복음', '사도행전', '로마서', '고린도전서', '고린도후서', '갈라디아서',
+    '에베소서', '빌립보서', '골로새서', '데살로니가전서', '데살로니가후서', '디모데전서',
+    '디모데후서', '디도서', '빌레몬서', '히브리서', '야고보서', '베드로전서',
+    '베드로후서', '요한일서', '요한이서', '요한삼서', '유다서', '요한계시록',
   ];
-  List<Future<MapEntry<String, List<Verse>>>> books;
+  Future<Database> dataBase;
   SungrakService() {
-    books = chapterNames.map((String name) async {
-      final raw = await rootBundle.loadString('bible/$name.txt');
-      final res = raw.split('\r\n').map((verse) {
-        final first = verse.indexOf(RegExp(r'[1-9]'));
-        final colon = verse.indexOf(':');
-        final range = verse.indexOf('-');
-        final space = verse.indexOf(' ');
-        final brace = verse.indexOf('(');
-        if(range != -1 && (range < brace || brace == -1)) {
-          final startVerse = int.parse(verse.substring(colon + 1, range));
-          final finalVerse = int.parse(verse.substring(range + 1, space));
-          return Verse(verse.substring(0, first), int.parse(verse.substring(first, colon)), startVerse, verse.substring(space + 1), range: finalVerse - startVerse);
-        }
-        else return Verse(verse.substring(0, first), int.parse(verse.substring(first, colon)), int.parse(verse.substring(colon + 1, space)), verse.substring(space + 1));
-      }).toList();
-      return MapEntry(name.substring(4), res);
-    }).toList();
+    dataBase = Future(loadDatabase);
+  }
+
+  FutureOr<Database> loadDatabase() async {
+    final databasesPath = await getDatabasesPath();
+    final path = '$databasesPath/assets_bible.db';
+
+    // Check if the database exists
+    final exists = await databaseExists(path);
+
+    if (!exists) {
+      // Should happen only the first time you launch your application
+      print("Creating new copy from asset");
+
+      // Make sure the parent directory exists
+      try {
+        await Directory(databasesPath).create(recursive: true);
+      } catch (e, s) { print('$e: $s'); }
+        
+      // Copy from asset
+      final data = await rootBundle.load('assets/bible.db');
+      final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      
+      // Write and flush the bytes written
+      await File(path).writeAsBytes(bytes, flush: true);
+
+    } else {
+      print("Opening existing database");
+    }
+    // open the database
+    return openDatabase(path, readOnly: true, singleInstance: false);
+  }
+
+  static Future<Iterable<DbBible>> bibleWhere(Database db, {Map<String, dynamic> where}) async {
+    final query = await db.query('bible', where: where.keys.map((k) => '$k = ?').join(' and '), whereArgs: where.values.toList());
+    return query.map((m) => DbBible.fromMap(m));
   }
 }
