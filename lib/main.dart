@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:logger/logger.dart';
 import 'package:sungrak_bible/service_locator.dart';
 import 'package:sungrak_bible/sungrak_service.dart';
 
@@ -7,6 +8,11 @@ void main() {
   runApp(MaterialApp(
       title: 'Flutter Demo',
       theme: ThemeData(
+        primarySwatch: Colors.teal,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
         primarySwatch: Colors.teal,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
@@ -20,48 +26,67 @@ void main() {
     ));
 }
 
-class HomePage extends StatelessWidget {
-  final SungrakService _service = locator<SungrakService>();
+class HomePage extends StatefulWidget {
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+  
+class _HomePageState extends State<HomePage> {
+  final _service = locator<SungrakService>();
+  final _logger = Logger();
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text('성락교회 성경 beta'),),
-    body: ListView.builder(itemCount: _service.bookNames.length, itemBuilder: (_, index) => 
-      FutureBuilder(future: _service.dataBase.then((db) => SungrakService.bibleWhere(db, where: { Bible.columnLang: 'korea', Bible.columnBookIndex: index + 1 })), 
-      builder: (_, AsyncSnapshot<Iterable<DbBible>> snapshot) => ListTile(
-        title: Text(_service.bookNames[index]),
-        subtitle: snapshot.hasError ? Text('${snapshot.error is Error ? (snapshot.error as Error).stackTrace : snapshot.error}')
-        : snapshot.hasData ? Text('총 ${DbBible.chapters(snapshot.data)}장')
-        : Text('로딩중...', style: TextStyle(color: Colors.yellowAccent[700]),),
+    appBar: AppBar(title: Text('성락교회 성경 β'),),
+    body: ListView.builder(itemCount: 66, shrinkWrap: true, itemBuilder: (_, index) => 
+      FutureBuilder(future: _service.bibleWhere(where: { Bible.columnLang: 'korea', Bible.columnBookIndex: index + 1 }), 
+      builder: (_, AsyncSnapshot<Iterable<DbBible>> snapshot) {
+        if(snapshot.hasError) {
+          _logger.e('error', snapshot.error, (snapshot.error as Error).stackTrace);
+        }
+        return snapshot.hasError ? ErrorTile(error: snapshot.error!)
+        : snapshot.hasData ? ListTile(
+        title: Text(snapshot.data!.first.bookName),
+        subtitle: Text('총 ${DbBible.chapters(snapshot.data!)}장'),
         onTap: () => Navigator.pushNamed(context, '/book', arguments: { Bible.columnLang: 'korea', Bible.columnBookIndex: index + 1 }),
-        ),),
+        ) : LoadingTile();
+      },),
     ),
     backgroundColor: null,
   );
 }
 
-class BookPage extends StatelessWidget {
+class BookPage extends StatefulWidget {
+  @override
+  State<BookPage> createState() => _BookPageState();
+}
+  
+class _BookPageState extends State<BookPage> {
   final SungrakService _service = locator<SungrakService>();
+
+  final _logger = Logger(filter: ProductionFilter());
 
   @override
   Widget build(BuildContext context) {
-    final Map<String, dynamic> query = ModalRoute.of(context).settings.arguments;
-    if(query == null || !query.containsKey(Bible.columnLang) || !query.containsKey(Bible.columnBookIndex)) return MyErrorWidget(
+    final Map<String, dynamic>? query = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    if(query != null || !query!.containsKey(Bible.columnLang) || !query.containsKey(Bible.columnBookIndex)) {
+      _logger.e('no such book in bible');
+      return MyErrorWidget(
       message: 'No such book',
       description: 'the book received as argument IS NULL',
     );
-    else return FutureBuilder(future: _service.dataBase.then((db) => SungrakService.bibleWhere(db, where: query)), 
+    } else return FutureBuilder(future: _service.bibleWhere(where: query), 
     builder: (_, AsyncSnapshot<Iterable<DbBible>> snapshot) => snapshot.hasError
     ? Scaffold(
       appBar: AppBar(title: Text('BookPage.Error'),),
       body: MyErrorWidget(message: 'async error', description: 'async operation got error: ${snapshot.error}',),
     )
     : snapshot.hasData ? Scaffold(
-      appBar: AppBar(title: Text(snapshot.data.first.bookName),),
-      body: ListView.builder(itemCount: DbBible.chapters(snapshot.data), itemBuilder: (_, index) => 
+      appBar: AppBar(title: Text(snapshot.data!.first.bookName),),
+      body: ListView.builder(itemCount: DbBible.chapters(snapshot.data!), shrinkWrap: true, itemBuilder: (_, index) => 
       ListTile(
         title: Text('${index + 1}장'),
-        subtitle: Text('총 ${DbBible.verses(snapshot.data, index + 1)}절'),
+        subtitle: Text('총 ${DbBible.verses(snapshot.data!, index + 1)}절'),
         onTap: () => Navigator.pushNamed(context, '/chapter', arguments: { ...query, Bible.columnChapter: index + 1 }),
       )))
     : Scaffold(
@@ -104,10 +129,10 @@ class LoadingWidget extends StatelessWidget {
 }
 
 class ErrorTile extends StatelessWidget {
-  final Object error;
+  final Object? error;
   final String errorText;
   final bool dense;
-  const ErrorTile({Key key, @required this.error, this.errorText = 'Error', this.dense = false}) : super(key: key);
+  const ErrorTile({Key? key, @required this.error, this.errorText = 'Error', this.dense = false}) : super(key: key);
   @override
   Widget build(BuildContext context) => ListTile(
     leading: Icon(Icons.error, color: Colors.red),
@@ -118,38 +143,53 @@ class ErrorTile extends StatelessWidget {
 }
 
 class LoadingTile extends StatelessWidget {
+  final String? description;
+
+  const LoadingTile({Key? key, this.description}) : super(key: key);
   @override
   Widget build(BuildContext context) => ListTile(
     leading: Icon(Icons.autorenew, color: Colors.yellow,),
     title: Text('로딩중...'),
-    subtitle: Text('loading from asset and parsing...'),
+    subtitle: description == null ? null : Text(description!),
   );
 }
 
-class ChapterPage extends StatelessWidget {
+class ChapterPage extends StatefulWidget {
+  @override
+  State<ChapterPage> createState() => _ChapterPageState();
+}
+  
+class _ChapterPageState extends State<ChapterPage> {
   final SungrakService _service = locator<SungrakService>();
 
   @override
   Widget build(BuildContext context) {
-    final Map<String, dynamic> query = ModalRoute.of(context).settings.arguments;
+    final Map<String, dynamic>? query = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     if (query == null || !query.containsKey(Bible.columnLang) || !query.containsKey(Bible.columnBookIndex) || !query.containsKey(Bible.columnChapter)) return MyErrorWidget(
       message: 'No such book and chapter',
       description: 'book and corresponding chapter received as argument IS BOTH NULL',
     );
-    else return FutureBuilder(future: _service.dataBase.then((db) => SungrakService.bibleWhere(db, where: query)), 
+    else return FutureBuilder(future: _service.bibleWhere(where: query..update(Bible.columnLang, (value) => _service.isKorean ? 'korea' : 'english', ifAbsent: () => null)), 
     builder: (_, AsyncSnapshot<Iterable<DbBible>> snapshot) {
       if(snapshot.hasError) return Scaffold(
         appBar: AppBar(title: Text('ChapterPage.Error'),),
         body: MyErrorWidget(message: 'async error', description: 'async : ${snapshot.error}',),
       );
       else if(snapshot.hasData) {
-        final chapter = snapshot.data;
+        final chapter = snapshot.data!;
         return Scaffold(
-          appBar: AppBar(title: Text('${snapshot.data.first.bookName} ${snapshot.data.first.chapter}장'),),
-          body: ListView.builder(itemCount: chapter.length, itemBuilder: (_, index) {
+          appBar: AppBar(
+            title: Text('${chapter.first.bookName} ' + (_service.isKorean ? '${chapter.first.chapter} 장' : 'Chapter ${chapter.first.chapter}')),
+            actions: [
+              FlatButton(
+                onPressed: () => setState(() => _service.isKorean = !_service.isKorean), 
+                child: Text(_service.isKorean ? '한국어' : 'English', style: TextStyle(color: Colors.white),)),
+            ],
+          ),
+          body: ListView.builder(itemCount: chapter.length, shrinkWrap: true, itemBuilder: (_, index) {
             final verse = chapter.elementAt(index);
             return ListTile(
-            title: Text('${verse.verse} ${verse.value}'),
+              title: SelectableText('${verse.verse} ${verse.value}'),
           );
           }));
       }
